@@ -1,5 +1,6 @@
 import { ShoppingCart, UtensilsCrossed, LogOut, Bike, User } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
+import NotificationBell from './NotificationBell';
 
 interface HeaderProps {
   onCartClick: () => void;
@@ -29,6 +30,8 @@ export default function Header({ onCartClick, onLogout, showDeliveryToggle, onSw
           </div>
 
           <div className="flex items-center gap-3">
+            <NotificationBell />
+
             {showDeliveryToggle && (
               <button
                 onClick={onSwitchToDelivery}

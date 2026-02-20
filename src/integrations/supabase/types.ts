@@ -79,6 +79,7 @@ export type Database = {
           created_at: string | null
           earnings: number | null
           id: string
+          is_accepting_orders: boolean | null
           name: string
           phone: string | null
           status: string | null
@@ -90,6 +91,7 @@ export type Database = {
           created_at?: string | null
           earnings?: number | null
           id?: string
+          is_accepting_orders?: boolean | null
           name: string
           phone?: string | null
           status?: string | null
@@ -101,6 +103,7 @@ export type Database = {
           created_at?: string | null
           earnings?: number | null
           id?: string
+          is_accepting_orders?: boolean | null
           name?: string
           phone?: string | null
           status?: string | null
@@ -153,6 +156,47 @@ export type Database = {
             columns: ["outlet_id"]
             isOneToOne: false
             referencedRelation: "outlets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string | null
+          id: string
+          is_read: boolean | null
+          message: string
+          order_id: string | null
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          message: string
+          order_id?: string | null
+          title: string
+          type?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          is_read?: boolean | null
+          message?: string
+          order_id?: string | null
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
             referencedColumns: ["id"]
           },
         ]

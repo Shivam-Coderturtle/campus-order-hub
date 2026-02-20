@@ -102,6 +102,7 @@ export interface DeliveryPartner {
   status: 'available' | 'busy' | 'offline';
   total_deliveries: number;
   earnings: number;
+  is_accepting_orders: boolean;
   created_at: string;
 }
 

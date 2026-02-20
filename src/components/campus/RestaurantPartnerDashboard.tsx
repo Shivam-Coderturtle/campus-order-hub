@@ -1,14 +1,20 @@
 import { useState, useEffect } from 'react';
 import { ShoppingBag, Clock, CheckCircle, TrendingUp, LogOut, Store, Package } from 'lucide-react';
 import { supabase, RestaurantPartner, Order } from '../../lib/supabase';
+import NotificationBell from './NotificationBell';
 
 interface RestaurantPartnerDashboardProps {
   onLogout: () => void;
 }
 
+interface OrderWithItems extends Order {
+  order_items?: { item_name: string; quantity: number; price: number }[];
+  delivery_partner_name?: string;
+}
+
 export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartnerDashboardProps) {
   const [partner, setPartner] = useState<RestaurantPartner | null>(null);
-  const [orders, setOrders] = useState<Order[]>([]);
+  const [orders, setOrders] = useState<OrderWithItems[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
   const [updatingOrder, setUpdatingOrder] = useState<string | null>(null);
@@ -16,11 +22,13 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
   useEffect(() => {
     fetchData();
 
-    // Real-time subscription for new orders
     const channel = supabase
       .channel('restaurant-orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
         fetchOrders();
+      })
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
+        // Refresh when new notifications come in (e.g., delivery partner accepted)
       })
       .subscribe();
 
@@ -60,14 +68,22 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
 
   const fetchOrdersForOutlet = async (outletId: string) => {
     try {
+      // Only show orders that have been confirmed (delivery partner accepted)
       const { data, error } = await supabase
         .from('orders')
-        .select('*')
+        .select('*, order_items(item_name, quantity, price), delivery_partners(name, phone)')
         .eq('outlet_id', outletId)
+        .in('status', ['confirmed', 'preparing', 'out_for_delivery', 'delivered', 'cancelled'])
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      setOrders(data || []);
+
+      const mapped = (data || []).map((o: any) => ({
+        ...o,
+        order_items: o.order_items || [],
+        delivery_partner_name: o.delivery_partners?.name || null,
+      }));
+      setOrders(mapped);
     } catch (error) {
       console.error('Error fetching orders:', error);
     }
@@ -82,6 +98,19 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
         .eq('id', orderId);
 
       if (error) throw error;
+
+      // Notify customer when restaurant accepts/starts preparing
+      const order = orders.find(o => o.id === orderId);
+      if (order?.user_id && newStatus === 'preparing') {
+        await supabase.from('notifications').insert({
+          user_id: order.user_id,
+          title: '🍳 Order Being Prepared!',
+          message: `Your order is now being prepared! Delivery by: ${order.delivery_partner_name || 'Assigned partner'}. Items: ${(order.order_items || []).map(i => `${i.item_name}×${i.quantity}`).join(', ')}. Total: ₹${order.total_amount}`,
+          type: 'order_accepted',
+          order_id: orderId,
+        });
+      }
+
       await fetchOrders();
     } catch (error) {
       console.error('Error updating order:', error);
@@ -102,20 +131,17 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
     return colors[status] || 'bg-gray-100 text-gray-700 border-gray-200';
   };
 
+  // Restaurant flow: confirmed → preparing → ready (out_for_delivery handled by delivery partner)
   const getNextStatus = (status: string): string | null => {
     const flow: Record<string, string> = {
-      pending: 'confirmed',
       confirmed: 'preparing',
-      preparing: 'out_for_delivery',
     };
     return flow[status] || null;
   };
 
   const getNextStatusLabel = (status: string): string => {
     const labels: Record<string, string> = {
-      pending: 'Confirm Order',
-      confirmed: 'Start Preparing',
-      preparing: 'Ready for Pickup',
+      confirmed: 'Accept & Start Preparing',
     };
     return labels[status] || '';
   };
@@ -144,7 +170,7 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
         <div className="bg-white rounded-2xl shadow-lg p-8 max-w-md w-full text-center">
           <Store className="h-16 w-16 text-orange-300 mx-auto mb-4" />
           <h2 className="text-xl font-bold text-gray-800 mb-2">Restaurant Profile Not Found</h2>
-          <p className="text-gray-500 mb-4 text-sm">Your account doesn't have an active restaurant partner profile. Please contact an admin to set up your restaurant.</p>
+          <p className="text-gray-500 mb-4 text-sm">Your account doesn't have an active restaurant partner profile.</p>
           <button onClick={onLogout} className="bg-orange-500 text-white px-6 py-2 rounded-lg hover:bg-orange-600 transition-colors">
             Sign Out
           </button>
@@ -171,9 +197,12 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
               </span>
             </div>
           </div>
-          <button onClick={onLogout} className="flex items-center gap-2 text-gray-600 hover:text-red-500 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors">
-            <LogOut className="h-5 w-5" />
-          </button>
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <button onClick={onLogout} className="flex items-center gap-2 text-gray-600 hover:text-red-500 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors">
+              <LogOut className="h-5 w-5" />
+            </button>
+          </div>
         </div>
       </header>
 
@@ -224,6 +253,9 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
                     <p className="font-bold text-gray-800">{order.customer_name}</p>
                     <p className="text-sm text-gray-500">📞 {order.customer_phone}</p>
                     <p className="text-sm text-gray-500 mt-1">📍 {order.delivery_address}</p>
+                    {order.delivery_partner_name && (
+                      <p className="text-sm text-blue-600 mt-1">🚴 Delivery: {order.delivery_partner_name}</p>
+                    )}
                   </div>
                   <div className="text-right">
                     <span className={`text-xs px-2 py-1 rounded-full border font-medium ${getStatusColor(order.status)}`}>
@@ -232,6 +264,20 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
                     <p className="text-orange-500 font-bold mt-2">₹{order.total_amount}</p>
                   </div>
                 </div>
+
+                {/* Order Items */}
+                {order.order_items && order.order_items.length > 0 && (
+                  <div className="bg-gray-50 rounded-lg p-3 mb-3">
+                    <p className="text-xs font-semibold text-gray-500 mb-1.5">ORDER ITEMS</p>
+                    {order.order_items.map((item, idx) => (
+                      <div key={idx} className="flex justify-between text-sm text-gray-700">
+                        <span>{item.item_name} × {item.quantity}</span>
+                        <span>₹{(item.price * item.quantity).toFixed(0)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
                 <p className="text-xs text-gray-400 mb-3 flex items-center gap-1">
                   <Clock className="h-3 w-3" />
                   {new Date(order.created_at).toLocaleString()}
@@ -245,7 +291,7 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
                     {updatingOrder === order.id ? 'Updating...' : getNextStatusLabel(order.status)}
                   </button>
                 )}
-                {order.status === 'pending' && (
+                {order.status === 'confirmed' && (
                   <button
                     onClick={() => updateOrderStatus(order.id, 'cancelled')}
                     disabled={updatingOrder === order.id}
@@ -261,7 +307,7 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
           {(activeTab === 'active' ? activeOrders : historyOrders).length === 0 && (
             <div className="text-center py-12 text-gray-500 bg-white rounded-xl">
               <Package className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-              <p>{activeTab === 'active' ? 'No active orders right now' : 'No order history yet'}</p>
+              <p>{activeTab === 'active' ? 'No active orders — orders appear here after a delivery partner accepts them' : 'No order history yet'}</p>
             </div>
           )}
         </div>
