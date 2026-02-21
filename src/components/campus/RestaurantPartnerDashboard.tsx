@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { ShoppingBag, Clock, CheckCircle, TrendingUp, LogOut, Store, Package } from 'lucide-react';
+import { ShoppingBag, Clock, CheckCircle, TrendingUp, LogOut, Store, Package, XCircle, BarChart3, Calendar } from 'lucide-react';
 import { supabase, RestaurantPartner, Order } from '../../lib/supabase';
 import NotificationBell from './NotificationBell';
 
@@ -26,9 +26,6 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
       .channel('restaurant-orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
         fetchOrders();
-      })
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'notifications' }, () => {
-        // Refresh when new notifications come in (e.g., delivery partner accepted)
       })
       .subscribe();
 
@@ -68,7 +65,6 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
 
   const fetchOrdersForOutlet = async (outletId: string) => {
     try {
-      // Only show orders that have been confirmed (delivery partner accepted)
       const { data, error } = await supabase
         .from('orders')
         .select('*, order_items(item_name, quantity, price), delivery_partners(name, phone)')
@@ -99,7 +95,6 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
 
       if (error) throw error;
 
-      // Notify customer when restaurant accepts/starts preparing
       const order = orders.find(o => o.id === orderId);
       if (order?.user_id && newStatus === 'preparing') {
         await supabase.from('notifications').insert({
@@ -131,27 +126,37 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
     return colors[status] || 'bg-gray-100 text-gray-700 border-gray-200';
   };
 
-  // Restaurant flow: confirmed → preparing → ready (out_for_delivery handled by delivery partner)
   const getNextStatus = (status: string): string | null => {
-    const flow: Record<string, string> = {
-      confirmed: 'preparing',
-    };
+    const flow: Record<string, string> = { confirmed: 'preparing' };
     return flow[status] || null;
   };
 
   const getNextStatusLabel = (status: string): string => {
-    const labels: Record<string, string> = {
-      confirmed: 'Accept & Start Preparing',
-    };
+    const labels: Record<string, string> = { confirmed: 'Accept & Start Preparing' };
     return labels[status] || '';
   };
 
   const activeOrders = orders.filter(o => !['delivered', 'cancelled'].includes(o.status));
   const historyOrders = orders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+  const deliveredOrders = orders.filter(o => o.status === 'delivered');
+  const cancelledOrders = orders.filter(o => o.status === 'cancelled');
 
-  const totalRevenue = orders
-    .filter(o => o.status === 'delivered')
-    .reduce((sum, o) => sum + o.total_amount, 0);
+  const totalRevenue = deliveredOrders.reduce((sum, o) => sum + o.total_amount, 0);
+  const avgOrderValue = deliveredOrders.length > 0 ? totalRevenue / deliveredOrders.length : 0;
+
+  // Today's stats
+  const today = new Date().toDateString();
+  const todayOrders = orders.filter(o => new Date(o.created_at).toDateString() === today);
+  const todayRevenue = todayOrders.filter(o => o.status === 'delivered').reduce((sum, o) => sum + o.total_amount, 0);
+
+  // Popular items
+  const itemCounts: Record<string, number> = {};
+  deliveredOrders.forEach(o => {
+    (o.order_items || []).forEach(item => {
+      itemCounts[item.item_name] = (itemCounts[item.item_name] || 0) + item.quantity;
+    });
+  });
+  const topItems = Object.entries(itemCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   if (loading) {
     return (
@@ -207,23 +212,58 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
       </header>
 
       <div className="max-w-5xl mx-auto px-4 py-6">
-        {/* Stats */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
+        {/* Stats Row 1 */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-            <ShoppingBag className="h-6 w-6 text-orange-500 mx-auto mb-1" />
+            <ShoppingBag className="h-5 w-5 text-orange-500 mx-auto mb-1" />
             <p className="text-2xl font-bold text-gray-800">{activeOrders.length}</p>
             <p className="text-xs text-gray-500">Active Orders</p>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-            <CheckCircle className="h-6 w-6 text-green-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold text-gray-800">{historyOrders.filter(o => o.status === 'delivered').length}</p>
+            <CheckCircle className="h-5 w-5 text-green-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-gray-800">{deliveredOrders.length}</p>
             <p className="text-xs text-gray-500">Delivered</p>
           </div>
           <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-            <TrendingUp className="h-6 w-6 text-blue-500 mx-auto mb-1" />
-            <p className="text-2xl font-bold text-gray-800">₹{totalRevenue.toFixed(0)}</p>
-            <p className="text-xs text-gray-500">Revenue</p>
+            <XCircle className="h-5 w-5 text-red-400 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-gray-800">{cancelledOrders.length}</p>
+            <p className="text-xs text-gray-500">Cancelled</p>
           </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm text-center">
+            <TrendingUp className="h-5 w-5 text-blue-500 mx-auto mb-1" />
+            <p className="text-2xl font-bold text-gray-800">₹{totalRevenue.toFixed(0)}</p>
+            <p className="text-xs text-gray-500">Total Revenue</p>
+          </div>
+        </div>
+
+        {/* Stats Row 2 — Today + Avg */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-6">
+          <div className="bg-gradient-to-r from-orange-500 to-red-500 rounded-xl p-4 shadow-sm text-white">
+            <div className="flex items-center gap-2 mb-1">
+              <Calendar className="h-4 w-4" />
+              <p className="text-xs font-medium opacity-90">Today</p>
+            </div>
+            <p className="text-xl font-bold">{todayOrders.length} orders</p>
+            <p className="text-sm opacity-80">₹{todayRevenue.toFixed(0)} revenue</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <BarChart3 className="h-4 w-4 text-purple-500" />
+              <p className="text-xs text-gray-500 font-medium">Avg Order Value</p>
+            </div>
+            <p className="text-xl font-bold text-gray-800">₹{avgOrderValue.toFixed(0)}</p>
+          </div>
+          {topItems.length > 0 && (
+            <div className="bg-white rounded-xl p-4 shadow-sm col-span-2 sm:col-span-1">
+              <p className="text-xs text-gray-500 font-semibold mb-2">🔥 Top Items</p>
+              {topItems.slice(0, 3).map(([item, count]) => (
+                <div key={item} className="flex justify-between text-sm text-gray-700">
+                  <span className="truncate">{item}</span>
+                  <span className="text-gray-400 ml-2">×{count}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Tabs */}
@@ -265,7 +305,6 @@ export default function RestaurantPartnerDashboard({ onLogout }: RestaurantPartn
                   </div>
                 </div>
 
-                {/* Order Items */}
                 {order.order_items && order.order_items.length > 0 && (
                   <div className="bg-gray-50 rounded-lg p-3 mb-3">
                     <p className="text-xs font-semibold text-gray-500 mb-1.5">ORDER ITEMS</p>

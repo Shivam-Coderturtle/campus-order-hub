@@ -1,4 +1,4 @@
-import { ShoppingCart, UtensilsCrossed, LogOut, Bike, User } from 'lucide-react';
+import { ShoppingCart, UtensilsCrossed, Bike, User, Settings } from 'lucide-react';
 import { useCart } from '../../context/CartContext';
 import NotificationBell from './NotificationBell';
 
@@ -7,9 +7,10 @@ interface HeaderProps {
   onLogout: () => void;
   showDeliveryToggle: boolean;
   onSwitchToDelivery: () => void;
+  onSettingsClick: () => void;
 }
 
-export default function Header({ onCartClick, onLogout, showDeliveryToggle, onSwitchToDelivery }: HeaderProps) {
+export default function Header({ onCartClick, onLogout, showDeliveryToggle, onSwitchToDelivery, onSettingsClick }: HeaderProps) {
   const { getTotalItems } = useCart();
   const totalItems = getTotalItems();
 
@@ -66,11 +67,11 @@ export default function Header({ onCartClick, onLogout, showDeliveryToggle, onSw
             </button>
 
             <button
-              onClick={onLogout}
-              className="flex items-center gap-2 text-gray-600 hover:text-red-500 px-3 py-2 rounded-lg hover:bg-red-50 transition-colors"
+              onClick={onSettingsClick}
+              className="flex items-center gap-2 text-gray-600 hover:text-orange-500 px-3 py-2 rounded-lg hover:bg-orange-50 transition-colors"
             >
-              <LogOut className="h-5 w-5" />
-              <span className="hidden sm:inline text-sm">Logout</span>
+              <Settings className="h-5 w-5" />
+              <span className="hidden sm:inline text-sm">Settings</span>
             </button>
           </div>
         </div>

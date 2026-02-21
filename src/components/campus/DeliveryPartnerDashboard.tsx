@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { MapPin, Phone, Package, CheckCircle, LogOut, Bike, User, IndianRupee, Clock, Power, Bell, Store } from 'lucide-react';
+import { MapPin, Phone, Package, CheckCircle, LogOut, Bike, User, IndianRupee, Clock, Power, Store, TrendingUp, Star, Calendar } from 'lucide-react';
 import { supabase, DeliveryPartner, Order } from '../../lib/supabase';
 import NotificationBell from './NotificationBell';
 
@@ -19,13 +19,12 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
   const [availableOrders, setAvailableOrders] = useState<OrderWithDetails[]>([]);
   const [myOrders, setMyOrders] = useState<OrderWithDetails[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'available' | 'my_orders'>('available');
+  const [activeTab, setActiveTab] = useState<'available' | 'my_orders' | 'history'>('available');
   const [isAcceptingOrders, setIsAcceptingOrders] = useState(false);
 
   useEffect(() => {
     fetchPartnerData();
 
-    // Realtime subscription for order changes
     const channel = supabase
       .channel('delivery-orders')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, () => {
@@ -51,7 +50,6 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
       setPartner(partnerData);
       setIsAcceptingOrders(partnerData?.is_accepting_orders || false);
 
-      // Fetch available orders with outlet names and items
       const { data: available } = await supabase
         .from('orders')
         .select('*, outlets(name), order_items(item_name, quantity, price)')
@@ -66,7 +64,6 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
       }));
       setAvailableOrders(mappedAvailable);
 
-      // Fetch my assigned orders with details
       if (partnerData) {
         const { data: mine } = await supabase
           .from('orders')
@@ -107,7 +104,6 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
   const handleAcceptOrder = async (orderId: string) => {
     if (!partner) return;
     try {
-      // Delivery partner accepts → order moves to 'confirmed'
       await supabase
         .from('orders')
         .update({ delivery_partner_id: partner.id, status: 'confirmed' })
@@ -118,10 +114,8 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
         .update({ status: 'busy' })
         .eq('id', partner.id);
 
-      // Get order details for notifications
       const order = availableOrders.find(o => o.id === orderId);
       if (order) {
-        // Notify customer that delivery partner has been assigned
         await supabase.from('notifications').insert({
           user_id: order.user_id!,
           title: '🚴 Delivery Partner Assigned!',
@@ -130,7 +124,6 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
           order_id: orderId,
         });
 
-        // Notify restaurant to start preparing (find restaurant partner user_id)
         if (order.outlet_id) {
           const { data: restPartner } = await supabase
             .from('restaurant_partners')
@@ -173,7 +166,6 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
         })
         .eq('id', partner.id);
 
-      // Notify customer
       const order = myOrders.find(o => o.id === orderId);
       if (order?.user_id) {
         await supabase.from('notifications').insert({
@@ -203,6 +195,16 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
     return colors[status] || 'bg-gray-100 text-gray-700';
   };
 
+  const activeMyOrders = myOrders.filter(o => !['delivered', 'cancelled'].includes(o.status));
+  const historyMyOrders = myOrders.filter(o => ['delivered', 'cancelled'].includes(o.status));
+
+  // Analytics
+  const deliveredCount = myOrders.filter(o => o.status === 'delivered').length;
+  const today = new Date().toDateString();
+  const todayDeliveries = myOrders.filter(o => o.status === 'delivered' && new Date(o.created_at).toDateString() === today).length;
+  const todayEarnings = todayDeliveries * 50;
+  const rating = partner ? Math.min(5, 4 + (deliveredCount > 0 ? 0.5 : 0)) : 0; // Simulated rating
+
   if (loading) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
@@ -230,10 +232,8 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
           <div className="flex items-center gap-2">
             <NotificationBell />
             {showToggle && (
-              <button
-                onClick={onToggleView}
-                className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
-              >
+              <button onClick={onToggleView}
+                className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors">
                 <User className="h-4 w-4" />
                 <span className="hidden sm:inline">Customer</span>
               </button>
@@ -259,48 +259,71 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
               </p>
             </div>
           </div>
-          <button
-            onClick={toggleAcceptingOrders}
-            className={`relative w-14 h-7 rounded-full transition-colors ${isAcceptingOrders ? 'bg-green-500' : 'bg-gray-300'}`}
-          >
+          <button onClick={toggleAcceptingOrders}
+            className={`relative w-14 h-7 rounded-full transition-colors ${isAcceptingOrders ? 'bg-green-500' : 'bg-gray-300'}`}>
             <span className={`absolute top-0.5 left-0.5 w-6 h-6 bg-white rounded-full shadow transition-transform ${isAcceptingOrders ? 'translate-x-7' : ''}`} />
           </button>
         </div>
 
         {/* Stats */}
         {partner && (
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-              <Package className="h-6 w-6 text-blue-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-gray-800">{partner.total_deliveries}</p>
-              <p className="text-xs text-gray-500">Total Deliveries</p>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <div className="bg-white rounded-xl p-4 shadow-sm text-center">
+                <Package className="h-5 w-5 text-blue-500 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-gray-800">{partner.total_deliveries}</p>
+                <p className="text-xs text-gray-500">Total Deliveries</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm text-center">
+                <IndianRupee className="h-5 w-5 text-green-500 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-gray-800">₹{partner.earnings}</p>
+                <p className="text-xs text-gray-500">Total Earnings</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm text-center">
+                <Star className="h-5 w-5 text-yellow-500 mx-auto mb-1" />
+                <p className="text-2xl font-bold text-gray-800">{rating.toFixed(1)}</p>
+                <p className="text-xs text-gray-500">Rating</p>
+              </div>
+              <div className="bg-white rounded-xl p-4 shadow-sm text-center">
+                <CheckCircle className={`h-5 w-5 mx-auto mb-1 ${isAcceptingOrders ? 'text-green-500' : 'text-gray-400'}`} />
+                <p className="text-2xl font-bold text-gray-800 capitalize">{partner.status}</p>
+                <p className="text-xs text-gray-500">Status</p>
+              </div>
             </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-              <IndianRupee className="h-6 w-6 text-green-500 mx-auto mb-1" />
-              <p className="text-2xl font-bold text-gray-800">₹{partner.earnings}</p>
-              <p className="text-xs text-gray-500">Earnings</p>
+
+            {/* Today's summary */}
+            <div className="bg-gradient-to-r from-blue-500 to-indigo-500 rounded-xl p-4 mb-6 text-white shadow-sm">
+              <div className="flex items-center gap-2 mb-1">
+                <Calendar className="h-4 w-4" />
+                <p className="text-xs font-medium opacity-90">Today's Summary</p>
+              </div>
+              <div className="flex justify-between items-end">
+                <div>
+                  <p className="text-2xl font-bold">{todayDeliveries} deliveries</p>
+                  <p className="text-sm opacity-80">₹{todayEarnings} earned today</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm opacity-80">{activeMyOrders.length} active</p>
+                  <p className="text-sm opacity-80">{availableOrders.length} available</p>
+                </div>
+              </div>
             </div>
-            <div className="bg-white rounded-xl p-4 shadow-sm text-center">
-              <CheckCircle className={`h-6 w-6 mx-auto mb-1 ${isAcceptingOrders ? 'text-green-500' : 'text-gray-400'}`} />
-              <p className="text-2xl font-bold text-gray-800 capitalize">{partner.status}</p>
-              <p className="text-xs text-gray-500">Status</p>
-            </div>
-          </div>
+          </>
         )}
 
         {/* Tabs */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => setActiveTab('available')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'available' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}
-          >
-            Available Orders ({availableOrders.length})
+        <div className="flex gap-2 mb-4 overflow-x-auto">
+          <button onClick={() => setActiveTab('available')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${activeTab === 'available' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
+            Available ({availableOrders.length})
           </button>
-          <button
-            onClick={() => setActiveTab('my_orders')}
-            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${activeTab === 'my_orders' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}
-          >
-            My Orders ({myOrders.length})
+          <button onClick={() => setActiveTab('my_orders')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${activeTab === 'my_orders' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
+            Active ({activeMyOrders.length})
+          </button>
+          <button onClick={() => setActiveTab('history')}
+            className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors whitespace-nowrap ${activeTab === 'history' ? 'bg-blue-500 text-white' : 'bg-white text-gray-600 border border-gray-200'}`}>
+            History ({historyMyOrders.length})
           </button>
         </div>
 
@@ -319,128 +342,121 @@ export default function DeliveryPartnerDashboard({ onLogout, showToggle, onToggl
                 <p>No available orders right now</p>
               </div>
             ) : availableOrders.map((order) => (
-              <div key={order.id} className="bg-white rounded-xl shadow-sm p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <p className="font-bold text-gray-800">{order.customer_name}</p>
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
-                      <Phone className="h-3 w-3" />{order.customer_phone}
-                    </p>
-                  </div>
-                  <span className="text-orange-500 font-bold text-lg">₹{order.total_amount}</span>
-                </div>
-
-                {/* Outlet Name */}
-                <div className="flex items-center gap-2 mb-2 text-sm text-gray-700">
-                  <Store className="h-4 w-4 text-orange-500" />
-                  <span className="font-medium">{order.outlet_name}</span>
-                </div>
-
-                {/* Delivery Address */}
-                <p className="text-sm text-gray-600 flex items-center gap-1 mb-3">
-                  <MapPin className="h-4 w-4 text-red-400" />{order.delivery_address}
-                </p>
-
-                {/* Order Items */}
-                {order.order_items && order.order_items.length > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                    <p className="text-xs font-semibold text-gray-500 mb-1.5">ORDER ITEMS</p>
-                    {order.order_items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between text-sm text-gray-700">
-                        <span>{item.item_name} × {item.quantity}</span>
-                        <span>₹{(item.price * item.quantity).toFixed(0)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                <p className="text-xs text-gray-400 flex items-center gap-1 mb-3">
-                  <Clock className="h-3 w-3" />
-                  {new Date(order.created_at).toLocaleString()}
-                </p>
-
-                <button
-                  onClick={() => handleAcceptOrder(order.id)}
-                  className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg font-medium transition-colors"
-                >
-                  Accept & Deliver
-                </button>
-              </div>
+              <OrderCard key={order.id} order={order} type="available" onAccept={handleAcceptOrder} getStatusColor={getStatusColor} />
             ))
           )}
 
           {activeTab === 'my_orders' && (
-            myOrders.length === 0 ? (
+            activeMyOrders.length === 0 ? (
               <div className="text-center py-12 text-gray-500 bg-white rounded-xl">
                 <Clock className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-                <p>No orders assigned yet</p>
+                <p>No active orders</p>
               </div>
-            ) : myOrders.map((order) => (
-              <div key={order.id} className="bg-white rounded-xl shadow-sm p-4">
-                <div className="flex justify-between items-start mb-3">
-                  <div>
-                    <p className="font-bold text-gray-800">{order.customer_name}</p>
-                    <p className="text-sm text-gray-500 flex items-center gap-1">
-                      <Phone className="h-3 w-3" />{order.customer_phone}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusColor(order.status)}`}>
-                      {order.status.replace(/_/g, ' ')}
-                    </span>
-                    <p className="text-orange-500 font-bold mt-1">₹{order.total_amount}</p>
-                  </div>
-                </div>
+            ) : activeMyOrders.map((order) => (
+              <OrderCard key={order.id} order={order} type="my" onPickup={async (id) => {
+                await supabase.from('orders').update({ status: 'out_for_delivery' }).eq('id', id);
+                fetchPartnerData();
+              }} onDeliver={handleDeliverOrder} getStatusColor={getStatusColor} />
+            ))
+          )}
 
-                <div className="flex items-center gap-2 mb-2 text-sm text-gray-700">
-                  <Store className="h-4 w-4 text-orange-500" />
-                  <span className="font-medium">{order.outlet_name}</span>
-                </div>
-
-                <p className="text-sm text-gray-600 flex items-center gap-1 mb-2">
-                  <MapPin className="h-4 w-4 text-red-400" />{order.delivery_address}
-                </p>
-
-                {order.order_items && order.order_items.length > 0 && (
-                  <div className="bg-gray-50 rounded-lg p-3 mb-3">
-                    <p className="text-xs font-semibold text-gray-500 mb-1.5">ORDER ITEMS</p>
-                    {order.order_items.map((item, idx) => (
-                      <div key={idx} className="flex justify-between text-sm text-gray-700">
-                        <span>{item.item_name} × {item.quantity}</span>
-                        <span>₹{(item.price * item.quantity).toFixed(0)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {(order.status === 'confirmed' || order.status === 'preparing' || order.status === 'out_for_delivery') && (
-                  <>
-                    {order.status !== 'out_for_delivery' && (
-                      <button
-                        onClick={async () => {
-                          await supabase.from('orders').update({ status: 'out_for_delivery' }).eq('id', order.id);
-                          fetchPartnerData();
-                        }}
-                        className="w-full bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 mb-2"
-                      >
-                        <Bike className="h-4 w-4" /> Picked Up - Out for Delivery
-                      </button>
-                    )}
-                    {order.status === 'out_for_delivery' && (
-                      <button
-                        onClick={() => handleDeliverOrder(order.id)}
-                        className="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
-                      >
-                        <CheckCircle className="h-4 w-4" /> Mark as Delivered
-                      </button>
-                    )}
-                  </>
-                )}
+          {activeTab === 'history' && (
+            historyMyOrders.length === 0 ? (
+              <div className="text-center py-12 text-gray-500 bg-white rounded-xl">
+                <TrendingUp className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+                <p>No delivery history yet</p>
               </div>
+            ) : historyMyOrders.map((order) => (
+              <OrderCard key={order.id} order={order} type="history" getStatusColor={getStatusColor} />
             ))
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Extracted Order Card component
+function OrderCard({ order, type, onAccept, onPickup, onDeliver, getStatusColor }: {
+  order: OrderWithDetails;
+  type: 'available' | 'my' | 'history';
+  onAccept?: (id: string) => void;
+  onPickup?: (id: string) => void;
+  onDeliver?: (id: string) => void;
+  getStatusColor: (status: string) => string;
+}) {
+  return (
+    <div className="bg-white rounded-xl shadow-sm p-4">
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <p className="font-bold text-gray-800">{order.customer_name}</p>
+          <p className="text-sm text-gray-500 flex items-center gap-1">
+            <Phone className="h-3 w-3" />{order.customer_phone}
+          </p>
+        </div>
+        <div className="text-right">
+          <span className={`text-xs px-2 py-1 rounded-full font-medium ${getStatusColor(order.status)}`}>
+            {order.status.replace(/_/g, ' ')}
+          </span>
+          <p className="text-orange-500 font-bold mt-1">₹{order.total_amount}</p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 mb-2 text-sm text-gray-700">
+        <Store className="h-4 w-4 text-orange-500" />
+        <span className="font-medium">{order.outlet_name}</span>
+      </div>
+
+      <p className="text-sm text-gray-600 flex items-center gap-1 mb-2">
+        <MapPin className="h-4 w-4 text-red-400" />{order.delivery_address}
+      </p>
+
+      {order.order_items && order.order_items.length > 0 && (
+        <div className="bg-gray-50 rounded-lg p-3 mb-3">
+          <p className="text-xs font-semibold text-gray-500 mb-1.5">ORDER ITEMS</p>
+          {order.order_items.map((item, idx) => (
+            <div key={idx} className="flex justify-between text-sm text-gray-700">
+              <span>{item.item_name} × {item.quantity}</span>
+              <span>₹{(item.price * item.quantity).toFixed(0)}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <p className="text-xs text-gray-400 flex items-center gap-1 mb-3">
+        <Clock className="h-3 w-3" />
+        {new Date(order.created_at).toLocaleString()}
+      </p>
+
+      {type === 'available' && onAccept && (
+        <button onClick={() => onAccept(order.id)}
+          className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2.5 rounded-lg font-medium transition-colors">
+          Accept & Deliver
+        </button>
+      )}
+
+      {type === 'my' && (
+        <>
+          {order.status !== 'out_for_delivery' && onPickup && (
+            <button onClick={() => onPickup(order.id)}
+              className="w-full bg-purple-500 hover:bg-purple-600 text-white py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 mb-2">
+              <Bike className="h-4 w-4" /> Picked Up - Out for Delivery
+            </button>
+          )}
+          {order.status === 'out_for_delivery' && onDeliver && (
+            <button onClick={() => onDeliver(order.id)}
+              className="w-full bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
+              <CheckCircle className="h-4 w-4" /> Mark as Delivered
+            </button>
+          )}
+        </>
+      )}
+
+      {type === 'history' && order.status === 'delivered' && (
+        <div className="flex items-center gap-2 text-green-600 text-sm font-medium">
+          <CheckCircle className="h-4 w-4" /> Delivered • ₹50 earned
+        </div>
+      )}
     </div>
   );
 }

@@ -7,6 +7,7 @@ import OutletDetail from '../components/campus/OutletDetail';
 import CartSidebar from '../components/campus/CartSidebar';
 import CheckoutModal from '../components/campus/CheckoutModal';
 import CustomerAuth from '../components/campus/CustomerAuth';
+import CustomerSettings from '../components/campus/CustomerSettings';
 import DeliveryPartnerDashboard from '../components/campus/DeliveryPartnerDashboard';
 import RestaurantPartnerDashboard from '../components/campus/RestaurantPartnerDashboard';
 import AdminPanel from '../components/campus/AdminPanel';
@@ -17,7 +18,7 @@ export default function Index() {
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [viewMode, setViewMode] = useState<'customer' | 'delivery_partner'>('customer');
+  const [viewMode, setViewMode] = useState<'customer' | 'delivery_partner' | 'settings'>('customer');
   const [isAlsoDeliveryPartner, setIsAlsoDeliveryPartner] = useState(false);
 
   useEffect(() => {
@@ -119,8 +120,11 @@ export default function Index() {
           onLogout={handleLogout}
           showDeliveryToggle={isAlsoDeliveryPartner}
           onSwitchToDelivery={() => setViewMode('delivery_partner')}
+          onSettingsClick={() => { setViewMode('settings'); setSelectedOutlet(null); }}
         />
-        {selectedOutlet ? (
+        {viewMode === 'settings' ? (
+          <CustomerSettings onBack={() => setViewMode('customer')} onLogout={handleLogout} />
+        ) : selectedOutlet ? (
           <OutletDetail outlet={selectedOutlet} onBack={() => { setSelectedOutlet(null); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
         ) : (
           <Home onSelectOutlet={(outlet) => { setSelectedOutlet(outlet); window.scrollTo({ top: 0, behavior: 'smooth' }); }} />
