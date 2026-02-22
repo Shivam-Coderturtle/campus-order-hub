@@ -11,38 +11,50 @@ import CustomerSettings from '../components/campus/CustomerSettings';
 import DeliveryPartnerDashboard from '../components/campus/DeliveryPartnerDashboard';
 import RestaurantPartnerDashboard from '../components/campus/RestaurantPartnerDashboard';
 import AdminPanel from '../components/campus/AdminPanel';
+import LandingPage from '../components/campus/LandingPage';
+
+type PageView = 'landing' | 'auth';
 
 export default function Index() {
   const [selectedOutlet, setSelectedOutlet] = useState<Outlet | null>(null);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [userRole, setUserRole] = useState<UserRole>(null);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(false);
   const [viewMode, setViewMode] = useState<'customer' | 'delivery_partner' | 'settings'>('customer');
   const [isAlsoDeliveryPartner, setIsAlsoDeliveryPartner] = useState(false);
+  const [pageView, setPageView] = useState<PageView>('landing');
+  const [authIsSignUp, setAuthIsSignUp] = useState(false);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event) => {
-      await checkUserRole();
+    // Check session first (local, fast)
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        setAuthLoading(false);
+        return;
+      }
+      checkUserRole(session.user.id);
     });
-    checkUserRole();
-    return () => subscription?.unsubscribe();
-  }, []);
 
-  const checkUserRole = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!session) {
         setUserRole(null);
         setIsAlsoDeliveryPartner(false);
         setAuthLoading(false);
         return;
       }
+      await checkUserRole(session.user.id);
+    });
 
+    return () => subscription?.unsubscribe();
+  }, []);
+
+  const checkUserRole = async (userId: string) => {
+    try {
       const { data: roles, error } = await supabase
         .from('user_roles')
         .select('role')
-        .eq('user_id', user.id);
+        .eq('user_id', userId);
 
       if (error) {
         console.error('Error fetching roles:', error);
@@ -83,6 +95,7 @@ export default function Index() {
     setSelectedOutlet(null);
     setIsCartOpen(false);
     setIsCheckoutOpen(false);
+    setPageView('landing');
   };
 
   if (authLoading) {
@@ -96,7 +109,23 @@ export default function Index() {
     );
   }
 
-  if (!userRole) return <CustomerAuth onAuthSuccess={checkUserRole} />;
+  // Not logged in
+  if (!userRole) {
+    if (pageView === 'landing') {
+      return (
+        <LandingPage
+          onLogin={() => { setAuthIsSignUp(false); setPageView('auth'); }}
+          onSignUp={() => { setAuthIsSignUp(true); setPageView('auth'); }}
+        />
+      );
+    }
+    return <CustomerAuth onAuthSuccess={() => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) checkUserRole(session.user.id);
+      });
+    }} onGoToLanding={() => setPageView('landing')} />;
+  }
+
   if (userRole === 'admin') return <AdminPanel onLogout={handleLogout} />;
   if (userRole === 'restaurant_partner') return <RestaurantPartnerDashboard onLogout={handleLogout} />;
   if (userRole === 'delivery_partner' && !isAlsoDeliveryPartner) {

@@ -1,26 +1,25 @@
 import { useState } from 'react';
-import { Mail, Lock, Phone, User, ArrowRight, KeyRound, MapPin, Calendar, Users } from 'lucide-react';
+import { Mail, Lock, Phone, User, ArrowRight, MapPin, Calendar, Users } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface CustomerAuthProps {
   onAuthSuccess: () => void;
+  onGoToLanding?: () => void;
 }
 
-type Step = 'auth' | 'otp' | 'profile' | 'mobile_verify';
+type Step = 'auth' | 'profile' | 'mobile_verify';
 
-export default function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
+export default function CustomerAuth({ onAuthSuccess, onGoToLanding }: CustomerAuthProps) {
   const [step, setStep] = useState<Step>('auth');
   const [isSignUp, setIsSignUp] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [otpCode, setOtpCode] = useState('');
   const [mobileOtp, setMobileOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
 
-  // Profile fields
   const [name, setName] = useState('');
   const [age, setAge] = useState('');
   const [gender, setGender] = useState('');
@@ -44,8 +43,8 @@ export default function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
         if (signUpError) throw signUpError;
         if (!data.user) throw new Error('Failed to create user');
 
-        setSuccessMsg('A 6-digit verification code has been sent to your email. Please check your inbox (and spam folder).');
-        setStep('otp');
+        // Auto-confirmed — go straight to profile
+        setStep('profile');
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
         if (signInError) throw signInError;
@@ -59,59 +58,16 @@ export default function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
     }
   };
 
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      const { data, error: verifyError } = await supabase.auth.verifyOtp({
-        email,
-        token: otpCode,
-        type: 'signup',
-      });
-
-      if (verifyError) throw verifyError;
-      if (!data.user) throw new Error('Verification failed');
-
-      setStep('profile');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'OTP verification failed.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResendOtp = async () => {
-    setError('');
-    setLoading(true);
-    try {
-      const { error: resendError } = await supabase.auth.resend({ type: 'signup', email });
-      if (resendError) throw resendError;
-      setSuccessMsg('Verification code resent! Please check your email.');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to resend code');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-
     if (!name.trim()) { setError('Name is required'); return; }
     if (!mobileNumber.match(/^\d{10}$/)) { setError('Please enter a valid 10-digit mobile number'); return; }
 
-    // Move to mobile OTP verification
     setLoading(true);
     try {
-      // In a real app, you'd send an SMS OTP here via an edge function.
-      // For now we simulate by moving to the verify step.
       setSuccessMsg(`A verification code has been sent to +91${mobileNumber}. For demo, enter 123456.`);
       setStep('mobile_verify');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send mobile OTP');
     } finally {
       setLoading(false);
     }
@@ -123,7 +79,6 @@ export default function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
     setLoading(true);
 
     try {
-      // Demo OTP verification — accept 123456
       if (mobileOtp !== '123456') throw new Error('Invalid OTP. For demo, use 123456.');
 
       const { data: { user } } = await supabase.auth.getUser();
@@ -154,7 +109,6 @@ export default function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
   const stepIndicator = (currentStep: Step) => {
     const steps = [
       { key: 'auth', label: 'Account' },
-      { key: 'otp', label: 'Verify Email' },
       { key: 'profile', label: 'Profile' },
       { key: 'mobile_verify', label: 'Verify Mobile' },
     ];
@@ -182,7 +136,7 @@ export default function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
     <div className="min-h-screen bg-gradient-to-b from-orange-50 to-white flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8">
         {isSignUp && step !== 'auth' && stepIndicator(step)}
-        
+
         {step === 'auth' && (
           <>
             <div className="text-center mb-8">
@@ -243,41 +197,12 @@ export default function CustomerAuth({ onAuthSuccess }: CustomerAuthProps) {
                 {isSignUp ? 'Sign In' : 'Sign Up'}
               </button>
             </p>
-          </>
-        )}
 
-        {step === 'otp' && (
-          <>
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <KeyRound className="h-8 w-8 text-orange-500" />
-              </div>
-              <h2 className="text-2xl font-bold text-gray-800">Verify Your Email</h2>
-              <p className="text-gray-500 text-sm mt-2">
-                Enter the 6-digit code sent to <span className="font-semibold text-gray-700">{email}</span>
-              </p>
-            </div>
-
-            {successMsg && <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded-lg mb-4 text-sm">{successMsg}</div>}
-            {error && <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg mb-4 text-sm">{error}</div>}
-
-            <form onSubmit={handleVerifyOtp} className="space-y-4">
-              <input type="text" required maxLength={6} value={otpCode}
-                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-orange-500 text-center text-2xl tracking-[0.5em] font-mono"
-                placeholder="000000" />
-              <button type="submit" disabled={loading || otpCode.length !== 6}
-                className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white py-3 rounded-lg font-bold disabled:opacity-50">
-                {loading ? 'Verifying...' : 'Verify & Continue'}
+            {onGoToLanding && (
+              <button onClick={onGoToLanding} className="w-full mt-4 text-gray-400 hover:text-gray-600 text-sm">
+                ← Back to home
               </button>
-            </form>
-
-            <div className="text-center mt-4">
-              <button onClick={handleResendOtp} disabled={loading}
-                className="text-orange-500 hover:text-orange-600 text-sm font-medium disabled:opacity-50">
-                Didn't receive the code? Resend
-              </button>
-            </div>
+            )}
           </>
         )}
 
