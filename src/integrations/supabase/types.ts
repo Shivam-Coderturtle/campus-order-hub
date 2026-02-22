@@ -346,6 +346,61 @@ export type Database = {
         }
         Relationships: []
       }
+      ratings: {
+        Row: {
+          created_at: string | null
+          id: string
+          menu_item_id: string | null
+          order_id: string
+          outlet_id: string
+          rating: number
+          review: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          id?: string
+          menu_item_id?: string | null
+          order_id: string
+          outlet_id: string
+          rating: number
+          review?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          id?: string
+          menu_item_id?: string | null
+          order_id?: string
+          outlet_id?: string
+          rating?: number
+          review?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ratings_menu_item_id_fkey"
+            columns: ["menu_item_id"]
+            isOneToOne: false
+            referencedRelation: "menu_items"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ratings_order_id_fkey"
+            columns: ["order_id"]
+            isOneToOne: false
+            referencedRelation: "orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ratings_outlet_id_fkey"
+            columns: ["outlet_id"]
+            isOneToOne: false
+            referencedRelation: "outlets"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       restaurant_partners: {
         Row: {
           contact_phone: string | null
