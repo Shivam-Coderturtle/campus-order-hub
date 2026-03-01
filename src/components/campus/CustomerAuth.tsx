@@ -28,6 +28,26 @@ export default function CustomerAuth({ onAuthSuccess, onGoToLanding }: CustomerA
   const [country, setCountry] = useState('');
   const [mobileNumber, setMobileNumber] = useState('');
 
+  const isTransientAuthError = (err: unknown) => {
+    if (!(err instanceof Error)) return false;
+    const msg = err.message.toLowerCase();
+    return msg.includes('failed to fetch') || msg.includes('network') || err.name === 'TypeError';
+  };
+
+  const withRetry = async <T,>(operation: () => Promise<T>, retries = 2): Promise<T> => {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (!isTransientAuthError(error) || attempt === retries) break;
+        await new Promise((resolve) => setTimeout(resolve, 400 * (attempt + 1)));
+      }
+    }
+    throw lastError;
+  };
+
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -39,20 +59,26 @@ export default function CustomerAuth({ onAuthSuccess, onGoToLanding }: CustomerA
         if (password !== confirmPassword) throw new Error('Passwords do not match');
         if (password.length < 6) throw new Error('Password must be at least 6 characters');
 
-        const { data, error: signUpError } = await supabase.auth.signUp({ email, password });
+        const { data, error: signUpError } = await withRetry(() => supabase.auth.signUp({ email, password }));
         if (signUpError) throw signUpError;
         if (!data.user) throw new Error('Failed to create user');
 
         // Auto-confirmed — go straight to profile
         setStep('profile');
       } else {
-        const { data, error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+        const { data, error: signInError } = await withRetry(() =>
+          supabase.auth.signInWithPassword({ email, password })
+        );
         if (signInError) throw signInError;
         if (!data.user) throw new Error('No user data returned');
         onAuthSuccess();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Authentication failed');
+      if (isTransientAuthError(err)) {
+        setError('Temporary network issue. Please retry in a few seconds.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Authentication failed');
+      }
     } finally {
       setLoading(false);
     }
