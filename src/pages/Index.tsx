@@ -36,14 +36,17 @@ export default function Index() {
       checkUserRole(session.user.id);
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+    // Do NOT await inside onAuthStateChange — it can cause deadlocks
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) {
         setUserRole(null);
         setIsAlsoDeliveryPartner(false);
         setAuthLoading(false);
+        setPageView('landing');
         return;
       }
-      await checkUserRole(session.user.id);
+      // Fire and forget — no await
+      checkUserRole(session.user.id);
     });
 
     return () => subscription?.unsubscribe();
